@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MiMaMoRi - 見守りダッシュボード</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <header class="header">
+        <h1>🏠 MiMaMoRi</h1>
+        <p class="subtitle">お母さんの見守りダッシュボード</p>
+    </header>
+    <main class="container">
+        <div class="refresh-bar">
+            <span id="last-update">読み込み中...</span>
+            <button class="btn-refresh" onclick="refreshDashboard()">🔄 更新</button>
+        </div>
+        <div id="status-banner" class="status-banner inactive">
+            <div id="status-indicator" class="status-indicator inactive">💤</div>
+            <div class="status-info">
+                <h2 id="status-title">読み込み中...</h2>
+                <p id="status-desc">データを取得しています</p>
+            </div>
+        </div>
+        <div class="card-grid">
+            <div class="card">
+                <div class="card-header">🚶 今日の動き検知</div>
+                <div id="motion-count" class="card-value">-</div>
+                <div class="card-sub">モーションセンサー (T100)</div>
+            </div>
+            <div class="card">
+                <div class="card-header">🔌 家電使用回数</div>
+                <div id="plug-count" class="card-value">-</div>
+                <div class="card-sub">電気ケトル (P100M)</div>
+            </div>
+            <div class="card">
+                <div class="card-header">⚠️ アクティブアラート</div>
+                <div id="alert-count" class="card-value success">-</div>
+                <div class="card-sub">未確認の通知</div>
+            </div>
+            <div class="card">
+                <div class="card-header">📡 デバイス状態</div>
+                <div id="device-count" class="card-value">-/-</div>
+                <div class="card-sub">オンライン / 合計</div>
+            </div>
+        </div>
+        <div class="section">
+            <h3 class="section-title">📊 今日の活動タイムライン</h3>
+            <div class="timeline-chart"><canvas id="timeline-canvas"></canvas></div>
+        </div>
+        <div class="card-grid">
+            <div class="section" style="grid-column: span 1;">
+                <h3 class="section-title">🕐 最近のイベント</h3>
+                <ul id="event-list" class="event-list"><div class="loading">読み込み中</div></ul>
+            </div>
+            <div class="section" style="grid-column: span 1;">
+                <h3 class="section-title">🔔 アラート</h3>
+                <div id="alert-list"><div class="loading">読み込み中</div></div>
+            </div>
+        </div>
+        <div class="section">
+            <h3 class="section-title">📡 デバイス状態</h3>
+            <div id="device-list" class="device-grid"><div class="loading">読み込み中</div></div>
+        </div>
+        <div class="section">
+            <h3 class="section-title">📅 週間サマリー</h3>
+            <table class="summary-table">
+                <thead><tr><th>日付</th><th>活動時間帯</th><th>動き検知</th><th>家電使用</th><th>最大不活動</th></tr></thead>
+                <tbody id="summary-table-body"><tr><td colspan="5" class="loading">読み込み中</td></tr></tbody>
+            </table>
+        </div>
+    </main>
+    <footer style="text-align:center; padding:1rem; color:#999; font-size:0.75rem;">
+        MiMaMoRi v1.0 | Powered by Tapo + FastAPI
+    </footer>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

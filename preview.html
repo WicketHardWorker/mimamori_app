@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MiMaMoRi Preview</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<style>
+:root{--primary:#4A90D9;--success:#27AE60;--warning:#F39C12;--danger:#E74C3C;--bg:#F5F7FA;--card-bg:#FFF;--text:#2C3E50;--text-light:#7F8C8D;--border:#E0E6ED;--shadow:0 2px 8px rgba(0,0,0,.08)}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;background:var(--bg);color:var(--text);line-height:1.6}
+.header{background:linear-gradient(135deg,var(--primary),#357ABD);color:#fff;padding:1rem 2rem}
+.header h1{font-size:1.4rem}.header .subtitle{font-size:.85rem;opacity:.85;margin-top:.2rem}
+.container{max-width:1200px;margin:0 auto;padding:1.5rem}
+.status-banner{background:var(--card-bg);border-radius:12px;padding:1.5rem;margin-bottom:1.5rem;box-shadow:var(--shadow);display:flex;align-items:center;gap:1rem;border-left:4px solid var(--success)}
+.status-indicator{width:48px;height:48px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.5rem;background:#E8F8F0}
+.status-info h2{font-size:1.1rem}.status-info p{font-size:.85rem;color:var(--text-light)}
+.card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:1rem;margin-bottom:1.5rem}
+.card{background:var(--card-bg);border-radius:12px;padding:1.2rem;box-shadow:var(--shadow)}
+.card-header{font-size:.85rem;color:var(--text-light);margin-bottom:.8rem}
+.card-value{font-size:2rem;font-weight:700}.card-value.success{color:var(--success)}
+.card-sub{font-size:.8rem;color:var(--text-light);margin-top:.3rem}
+.section{background:var(--card-bg);border-radius:12px;padding:1.5rem;margin-bottom:1.5rem;box-shadow:var(--shadow)}
+.section-title{font-size:1rem;font-weight:600;margin-bottom:1rem}
+.timeline-chart{width:100%;height:200px}
+.event-list{list-style:none}
+.event-item{display:flex;align-items:center;gap:.8rem;padding:.7rem 0;border-bottom:1px solid var(--border)}
+.event-item:last-child{border-bottom:none}
+.event-icon{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.9rem}
+.event-icon.motion{background:#E8F0FE}.event-icon.plug-on{background:#E8F8F0}.event-icon.plug-off{background:#F5F5F5}
+.event-info{flex:1}.event-info .event-name{font-size:.85rem;font-weight:500}.event-info .event-device{font-size:.75rem;color:var(--text-light)}
+.event-time{font-size:.8rem;color:var(--text-light)}
+.device-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:.8rem}
+.device-item{display:flex;align-items:center;gap:.8rem;padding:.8rem;border:1px solid var(--border);border-radius:8px}
+.device-dot{width:10px;height:10px;border-radius:50%;background:var(--success);box-shadow:0 0 4px rgba(39,174,96,.4)}
+.device-info .device-name{font-size:.85rem;font-weight:500}.device-info .device-type{font-size:.75rem;color:var(--text-light)}
+.alert-item{padding:.8rem;border-radius:8px;margin-bottom:.5rem;background:#F0FAF0;border:1px solid #D5F5E3}
+.alert-item .alert-message{font-size:.85rem;margin-bottom:.3rem}.alert-item .alert-time{font-size:.75rem;color:var(--text-light)}
+.summary-table{width:100%;border-collapse:collapse;font-size:.85rem}
+.summary-table th,.summary-table td{padding:.6rem .8rem;text-align:left;border-bottom:1px solid var(--border)}
+.summary-table th{font-weight:600;color:var(--text-light);font-size:.8rem}
+.refresh-bar{display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;font-size:.8rem;color:var(--text-light)}
+.btn-refresh{font-size:.8rem;padding:.4rem .8rem;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer}
+@media(max-width:768px){.card-grid{grid-template-columns:repeat(2,1fr)}.status-banner{flex-direction:column;text-align:center}}
+@media(max-width:480px){.card-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header class="header"><h1>🏠 MiMaMoRi</h1><p class="subtitle">お母さんの見守りダッシュボード</p></header>
+<main class="container">
+<div class="refresh-bar"><span>最終更新: 14:32:15</span><button class="btn-refresh">🔄 更新</button></div>
+<div class="status-banner"><div class="status-indicator">✅</div><div class="status-info"><h2>活動中です</h2><p>最後の検知: 14:28 (電気ケトル)</p></div></div>
+<div class="card-grid">
+<div class="card"><div class="card-header">🚶 今日の動き検知</div><div class="card-value">24</div><div class="card-sub">モーションセンサー (T100)</div></div>
+<div class="card"><div class="card-header">🔌 家電使用回数</div><div class="card-value">5</div><div class="card-sub">電気ケトル (P100M)</div></div>
+<div class="card"><div class="card-header">⚠️ アクティブアラート</div><div class="card-value success">0</div><div class="card-sub">未確認の通知</div></div>
+<div class="card"><div class="card-header">📡 デバイス状態</div><div class="card-value">3/3</div><div class="card-sub">オンライン / 合計</div></div>
+</div>
+<div class="section"><h3 class="section-title">📊 今日の活動タイムライン</h3><div class="timeline-chart"><canvas id="timeline-canvas"></canvas></div></div>
+<div class="card-grid">
+<div class="section"><h3 class="section-title">🕐 最近のイベント</h3><ul class="event-list">
+<li class="event-item"><div class="event-icon plug-on">🔌</div><div class="event-info"><div class="event-name">電源ON</div><div class="event-device">電気ケトル</div></div><div class="event-time">14:28:03</div></li>
+<li class="event-item"><div class="event-icon motion">🚶</div><div class="event-info"><div class="event-name">動き検知</div><div class="event-device">リビング T100</div></div><div class="event-time">14:25:41</div></li>
+<li class="event-item"><div class="event-icon plug-off">⭕</div><div class="event-info"><div class="event-name">電源OFF</div><div class="event-device">電気ケトル</div></div><div class="event-time">12:15:22</div></li>
+<li class="event-item"><div class="event-icon plug-on">🔌</div><div class="event-info"><div class="event-name">電源ON</div><div class="event-device">電気ケトル</div></div><div class="event-time">12:10:05</div></li>
+<li class="event-item"><div class="event-icon motion">🚶</div><div class="event-info"><div class="event-name">動き検知</div><div class="event-device">リビング T100</div></div><div class="event-time">12:08:33</div></li>
+<li class="event-item"><div class="event-icon motion">🚶</div><div class="event-info"><div class="event-name">動き検知</div><div class="event-device">リビング T100</div></div><div class="event-time">07:12:45</div></li>
+</ul></div>
+<div class="section"><h3 class="section-title">🔔 アラート</h3>
+<div class="alert-item"><div class="alert-message">✅ 長時間不活動: 自動解消（12:08に活動検知）</div><div class="alert-time">2026-07-08 12:08</div></div>
+<div style="text-align:center;padding:1rem;color:var(--text-light)">✅ アクティブなアラートはありません</div>
+</div>
+</div>
+<div class="section"><h3 class="section-title">📡 デバイス状態</h3><div class="device-grid">
+<div class="device-item"><div class="device-dot"></div><div class="device-info"><div class="device-name">H100 ハブ</div><div class="device-type">ハブ / 192.168.1.100</div></div></div>
+<div class="device-item"><div class="device-dot"></div><div class="device-info"><div class="device-name">リビング T100</div><div class="device-type">モーションセンサー</div></div></div>
+<div class="device-item"><div class="device-dot"></div><div class="device-info"><div class="device-name">電気ケトル</div><div class="device-type">スマートプラグ / 192.168.1.101</div></div></div>
+</div></div>
+<div class="section"><h3 class="section-title">📅 週間サマリー</h3><table class="summary-table"><thead><tr><th>日付</th><th>活動時間帯</th><th>動き検知</th><th>家電使用</th><th>最大不活動</th></tr></thead><tbody>
+<tr><td>07-08</td><td>07:05〜14:28</td><td>24</td><td>5</td><td>195分</td></tr>
+<tr><td>07-07</td><td>06:45〜21:30</td><td>38</td><td>7</td><td>120分</td></tr>
+<tr><td>07-06</td><td>07:20〜22:05</td><td>31</td><td>6</td><td>90分</td></tr>
+<tr><td>07-05</td><td>08:10〜20:45</td><td>22</td><td>4</td><td>145分</td></tr>
+<tr><td>07-04</td><td>06:55〜21:15</td><td>35</td><td>8</td><td>85分</td></tr>
+</tbody></table></div>
+</main>
+<footer style="text-align:center;padding:1rem;color:#999;font-size:.75rem">MiMaMoRi v1.0 | Powered by Tapo + FastAPI</footer>
+<script>
+document.addEventListener('DOMContentLoaded',()=>{
+new Chart(document.getElementById('timeline-canvas'),{type:'bar',data:{labels:['00','01','02','03','04','05','06','07','08','09','10','11','12','13','14','15','16','17','18','19','20','21','22','23'],datasets:[{label:'動き検知',data:[0,0,0,0,0,0,0,3,2,2,3,1,4,2,3,0,0,0,0,0,0,0,0,0],backgroundColor:'rgba(74,144,217,.6)',borderColor:'rgba(74,144,217,1)',borderWidth:1},{label:'電気ケトル',data:[0,0,0,0,0,0,0,1,0,1,0,0,1,0,1,0,0,0,0,0,0,0,0,0],backgroundColor:'rgba(39,174,96,.6)',borderColor:'rgba(39,174,96,1)',borderWidth:1}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top'}},scales:{x:{ticks:{maxRotation:0}},y:{beginAtZero:true,ticks:{stepSize:1}}}}});
+});
+</script>
+</body>
+</html>

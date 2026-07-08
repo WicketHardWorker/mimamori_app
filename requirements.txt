@@ -1,0 +1,27 @@
+# MiMaMoRi - 見守りアプリ
+# TP-Link Tapo デバイス連携
+tapo>=0.3.0
+
+# Web フレームワーク
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+jinja2>=3.1.2
+
+# データベース
+sqlalchemy>=2.0.0
+aiosqlite>=0.19.0
+
+# スケジューラ
+apscheduler>=3.10.0
+
+# LINE Messaging API
+line-bot-sdk>=3.5.0
+
+# HTTP クライアント
+httpx>=0.25.0
+
+# 環境変数
+python-dotenv>=1.0.0
+
+# 日付処理
+python-dateutil>=2.8.0
