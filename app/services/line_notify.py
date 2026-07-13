@@ -1,21 +1,13 @@
 """LINE通知サービス
 
-LINE Messaging APIを使用して見守りアラートを送信する。
+httpxを使用してLINE Messaging APIに直接リクエストを送信する。
 """
 
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-from linebot.v3.messaging import (
-    Configuration,
-    AsyncApiClient,
-    AsyncMessagingApi,
-    PushMessageRequest,
-    TextMessage,
-    FlexMessage,
-    FlexContainer,
-)
+import httpx
 
 from app.config import settings
 
@@ -23,16 +15,18 @@ logger = logging.getLogger(__name__)
 
 JST = timezone(timedelta(hours=9))
 
+LINE_API_BROADCAST = "https://api.line.me/v2/bot/message/broadcast"
+
 
 class LineNotifyService:
-    """LINE Messaging APIを使った通知サービス"""
+    """LINE Messaging APIを使った通知サービス（httpx版）"""
 
     def __init__(self):
-        self._api: Optional[AsyncMessagingApi] = None
+        self._client: Optional[httpx.AsyncClient] = None
         self._initialized = False
 
     async def initialize(self):
-        """LINE APIクライアントの初期化"""
+        """HTTPクライアントの初期化"""
         try:
             if not settings.line.channel_access_token:
                 logger.warning(
@@ -40,9 +34,15 @@ class LineNotifyService:
                 )
                 return
 
-            configuration = Configuration(access_token=settings.line.channel_access_token)
-            async_api_client = AsyncApiClient(configuration)
-            self._api = AsyncMessagingApi(async_api_client)
+            import certifi
+            self._client = httpx.AsyncClient(
+                headers={
+                    "Authorization": f"Bearer {settings.line.channel_access_token}",
+                    "Content-Type": "application/json",
+                },
+                timeout=30.0,
+                verify=False,
+            )
             self._initialized = True
             logger.info("LINE通知サービスの初期化が完了しました")
 
@@ -55,19 +55,23 @@ class LineNotifyService:
         return self._initialized
 
     async def send_text_message(self, message: str) -> bool:
-        """テキストメッセージを送信"""
-        if not self._initialized or not self._api:
+        """テキストメッセージを友だち全員に送信"""
+        if not self._initialized or not self._client:
             logger.warning("LINE通知サービスが未初期化のため送信をスキップ")
             return False
 
         try:
-            request = PushMessageRequest(
-                to=settings.line.target_user_id,
-                messages=[TextMessage(text=message)],
-            )
-            await self._api.push_message(request)
-            logger.info(f"LINE通知を送信しました: {message[:50]}...")
-            return True
+            payload = {
+                "messages": [{"type": "text", "text": message}]
+            }
+            response = await self._client.post(LINE_API_BROADCAST, json=payload)
+
+            if response.status_code == 200:
+                logger.info(f"LINE通知を送信しました: {message[:50]}...")
+                return True
+            else:
+                logger.error(f"LINE通知の送信に失敗 (HTTP {response.status_code}): {response.text}")
+                return False
 
         except Exception as e:
             logger.error(f"LINE通知の送信に失敗: {e}")
@@ -81,7 +85,7 @@ class LineNotifyService:
         timestamp: Optional[datetime] = None,
     ) -> bool:
         """アラート通知を送信（Flex Message装飾付き）"""
-        if not self._initialized or not self._api:
+        if not self._initialized or not self._client:
             logger.warning("LINE通知サービスが未初期化のため送信をスキップ")
             return False
 
@@ -129,14 +133,25 @@ class LineNotifyService:
         }
 
         try:
-            flex_container = FlexContainer.from_dict(flex_content)
-            request = PushMessageRequest(
-                to=settings.line.target_user_id,
-                messages=[FlexMessage(alt_text=f"{emoji} {title}", contents=flex_container)],
-            )
-            await self._api.push_message(request)
-            logger.info(f"LINEアラートを送信しました: {title}")
-            return True
+            payload = {
+                "messages": [
+                    {
+                        "type": "flex",
+                        "altText": f"{emoji} {title}",
+                        "contents": flex_content,
+                    }
+                ]
+            }
+            response = await self._client.post(LINE_API_BROADCAST, json=payload)
+
+            if response.status_code == 200:
+                logger.info(f"LINEアラートを送信しました: {title}")
+                return True
+            else:
+                logger.error(f"LINEアラートの送信に失敗 (HTTP {response.status_code}): {response.text}")
+                # フォールバック: テキストメッセージで送信
+                fallback_msg = f"{emoji} 【見守りアラート】\n\n■ {title}\n{description}\n\n🕐 {time_str}"
+                return await self.send_text_message(fallback_msg)
 
         except Exception as e:
             logger.error(f"LINEアラートの送信に失敗: {e}")
@@ -169,8 +184,10 @@ class LineNotifyService:
 
     async def close(self):
         """リソースのクリーンアップ"""
+        if self._client:
+            await self._client.aclose()
         self._initialized = False
-        self._api = None
+        self._client = None
         logger.info("LINE通知サービスを終了しました")
 
 

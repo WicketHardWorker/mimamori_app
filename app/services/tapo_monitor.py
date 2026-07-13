@@ -83,18 +83,15 @@ class TapoMonitorService:
 
         # === 方法1: トリガーログから取得（正確な検知時刻が取れる） ===
         try:
-            # H100のトリガーログAPIを試す
             trigger_logs = await self._hub.get_trigger_logs(page_size=20)
             logs = getattr(trigger_logs, "logs", None) or getattr(trigger_logs, "entries", None) or trigger_logs
 
             if logs and hasattr(logs, '__iter__'):
                 for log_entry in logs:
-                    # タイムスタンプを取得
                     ts = getattr(log_entry, "timestamp", None) or getattr(log_entry, "time", None)
                     if ts is None:
                         continue
 
-                    # UNIXタイムスタンプならdatetimeに変換
                     if isinstance(ts, (int, float)):
                         event_time = datetime.fromtimestamp(ts, tz=JST)
                     elif isinstance(ts, datetime):
@@ -102,7 +99,6 @@ class TapoMonitorService:
                     else:
                         continue
 
-                    # 既に記録済みのイベントはスキップ
                     if (
                         self._last_motion_time is not None
                         and event_time <= self._last_motion_time
@@ -125,7 +121,6 @@ class TapoMonitorService:
                     events.append(event)
 
                 if events:
-                    # 最新のイベント時刻を記録
                     self._last_motion_time = max(e["timestamp"] for e in events)
                     logger.info(
                         f"トリガーログから {len(events)} 件のモーション検知を取得"
@@ -133,9 +128,12 @@ class TapoMonitorService:
                     return events
 
         except (AttributeError, TypeError) as e:
-            # get_trigger_logs が存在しない場合はフォールバックへ
             logger.debug(f"トリガーログ取得をスキップ（未対応）: {e}")
         except Exception as e:
+            if "SESSION_TIMEOUT" in str(e) or "Unauthorized" in str(e):
+                logger.warning(f"セッション切れを検知、再接続します: {e}")
+                await self.reconnect()
+                return events
             logger.debug(f"トリガーログ取得でエラー（フォールバックへ）: {e}")
 
         # === 方法2: フォールバック - detected フラグによるポーリング ===
@@ -153,7 +151,6 @@ class TapoMonitorService:
                     if not detected:
                         continue
 
-                    # デバイスにタイムスタンプがあれば使う（実際の検知時刻）
                     event_time = None
                     for attr in ("last_onboarding_timestamp", "triggered_at", "timestamp"):
                         ts = getattr(device, attr, None)
@@ -164,11 +161,9 @@ class TapoMonitorService:
                                 event_time = ts if ts.tzinfo else ts.replace(tzinfo=JST)
                             break
 
-                    # タイムスタンプがなければポーリング時刻を使う
                     if event_time is None:
                         event_time = datetime.now(JST)
 
-                    # 前回と同じイベントならスキップ（重複防止）
                     if (
                         self._last_motion_time is not None
                         and event_time <= self._last_motion_time
@@ -192,7 +187,11 @@ class TapoMonitorService:
                     )
 
         except Exception as e:
-            logger.error(f"モーションセンサーの確認中にエラー: {e}")
+            if "SESSION_TIMEOUT" in str(e) or "Unauthorized" in str(e):
+                logger.warning(f"セッション切れを検知、再接続します: {e}")
+                await self.reconnect()
+            else:
+                logger.error(f"モーションセンサーの確認中にエラー: {e}")
 
         return events
 
@@ -264,9 +263,31 @@ class TapoMonitorService:
                 )
 
         except Exception as e:
-            logger.error(f"プラグ電力監視中にエラー: {e}")
+            if "SESSION_TIMEOUT" in str(e) or "Unauthorized" in str(e):
+                logger.warning(f"セッション切れを検知（プラグ）、再接続します: {e}")
+                await self.reconnect()
+            else:
+                logger.error(f"プラグ電力監視中にエラー: {e}")
 
         return events
+
+    async def reconnect(self):
+        """セッション切れ時に再接続"""
+        logger.info("Tapoデバイスに再接続を試みます...")
+        try:
+            self._client = ApiClient(
+                settings.tapo.username,
+                settings.tapo.password,
+            )
+            if settings.tapo.h100_ip:
+                self._hub = await self._client.h100(settings.tapo.h100_ip)
+            if settings.tapo.p100m_ip:
+                self._plug = await self._client.p110(settings.tapo.p100m_ip)
+            self._initialized = True
+            logger.info("✅ Tapoデバイスへの再接続に成功しました")
+        except Exception as e:
+            logger.error(f"再接続に失敗しました: {e}")
+            self._initialized = False
 
     async def poll_all_devices(self) -> list[dict]:
         """全デバイスをポーリングしてイベントを収集"""
