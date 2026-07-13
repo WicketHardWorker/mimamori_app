@@ -45,7 +45,7 @@ class AlertConfig:
         default_factory=lambda: int(os.getenv("INACTIVITY_THRESHOLD_MINUTES", "180"))
     )
     polling_interval_seconds: int = field(
-        default_factory=lambda: int(os.getenv("POLLING_INTERVAL_SECONDS", "60"))
+        default_factory=lambda: int(os.getenv("POLLING_INTERVAL_SECONDS", "15"))
     )
 
 

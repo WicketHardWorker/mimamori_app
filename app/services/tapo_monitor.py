@@ -69,13 +69,76 @@ class TapoMonitorService:
         return self._initialized
 
     async def check_motion_sensor(self) -> list[dict]:
-        """H100ハブ経由でT100モーションセンサーの状態を確認"""
+        """H100ハブ経由でT100モーションセンサーの状態を確認
+
+        2つの方法で検知を試みる:
+        1. get_trigger_logs() でイベント履歴を取得（正確な時刻が取れる）
+        2. フォールバック: get_child_device_list() で detected フラグを確認
+        """
         events = []
 
         if not self._hub:
             logger.warning("H100ハブが未接続です")
             return events
 
+        # === 方法1: トリガーログから取得（正確な検知時刻が取れる） ===
+        try:
+            # H100のトリガーログAPIを試す
+            trigger_logs = await self._hub.get_trigger_logs(page_size=20)
+            logs = getattr(trigger_logs, "logs", None) or getattr(trigger_logs, "entries", None) or trigger_logs
+
+            if logs and hasattr(logs, '__iter__'):
+                for log_entry in logs:
+                    # タイムスタンプを取得
+                    ts = getattr(log_entry, "timestamp", None) or getattr(log_entry, "time", None)
+                    if ts is None:
+                        continue
+
+                    # UNIXタイムスタンプならdatetimeに変換
+                    if isinstance(ts, (int, float)):
+                        event_time = datetime.fromtimestamp(ts, tz=JST)
+                    elif isinstance(ts, datetime):
+                        event_time = ts if ts.tzinfo else ts.replace(tzinfo=JST)
+                    else:
+                        continue
+
+                    # 既に記録済みのイベントはスキップ
+                    if (
+                        self._last_motion_time is not None
+                        and event_time <= self._last_motion_time
+                    ):
+                        continue
+
+                    device_id = getattr(log_entry, "device_id", "unknown")
+                    nickname = getattr(log_entry, "nickname", None) or "T100 センサー"
+
+                    event = {
+                        "event_type": EventType.MOTION_DETECTED,
+                        "device_name": nickname,
+                        "device_id": device_id,
+                        "timestamp": event_time,
+                        "details": json.dumps(
+                            {"source": "T100", "method": "trigger_logs"},
+                            ensure_ascii=False,
+                        ),
+                    }
+                    events.append(event)
+
+                if events:
+                    # 最新のイベント時刻を記録
+                    self._last_motion_time = max(e["timestamp"] for e in events)
+                    logger.info(
+                        f"トリガーログから {len(events)} 件のモーション検知を取得"
+                    )
+                    return events
+
+        except (AttributeError, TypeError) as e:
+            # get_trigger_logs が存在しない場合はフォールバックへ
+            logger.debug(f"トリガーログ取得をスキップ（未対応）: {e}")
+        except Exception as e:
+            logger.debug(f"トリガーログ取得でエラー（フォールバックへ）: {e}")
+
+        # === 方法2: フォールバック - detected フラグによるポーリング ===
         try:
             child_device_list = await self._hub.get_child_device_list()
 
@@ -83,31 +146,50 @@ class TapoMonitorService:
                 if hasattr(device, "detected") or "T100" in str(
                     getattr(device, "model", "")
                 ):
-                    now = datetime.now(JST)
                     detected = getattr(device, "detected", False)
                     device_id = getattr(device, "device_id", "unknown")
                     nickname = getattr(device, "nickname", "T100 センサー")
 
-                    if detected:
-                        if (
-                            self._last_motion_time is None
-                            or (now - self._last_motion_time).total_seconds() > 30
-                        ):
-                            self._last_motion_time = now
-                            event = {
-                                "event_type": EventType.MOTION_DETECTED,
-                                "device_name": nickname,
-                                "device_id": device_id,
-                                "timestamp": now,
-                                "details": json.dumps(
-                                    {"detected": True, "source": "T100"},
-                                    ensure_ascii=False,
-                                ),
-                            }
-                            events.append(event)
-                            logger.info(
-                                f"モーション検知: {nickname} ({now.strftime('%H:%M:%S')})"
-                            )
+                    if not detected:
+                        continue
+
+                    # デバイスにタイムスタンプがあれば使う（実際の検知時刻）
+                    event_time = None
+                    for attr in ("last_onboarding_timestamp", "triggered_at", "timestamp"):
+                        ts = getattr(device, attr, None)
+                        if ts is not None:
+                            if isinstance(ts, (int, float)) and ts > 0:
+                                event_time = datetime.fromtimestamp(ts, tz=JST)
+                            elif isinstance(ts, datetime):
+                                event_time = ts if ts.tzinfo else ts.replace(tzinfo=JST)
+                            break
+
+                    # タイムスタンプがなければポーリング時刻を使う
+                    if event_time is None:
+                        event_time = datetime.now(JST)
+
+                    # 前回と同じイベントならスキップ（重複防止）
+                    if (
+                        self._last_motion_time is not None
+                        and event_time <= self._last_motion_time
+                    ):
+                        continue
+
+                    self._last_motion_time = event_time
+                    event = {
+                        "event_type": EventType.MOTION_DETECTED,
+                        "device_name": nickname,
+                        "device_id": device_id,
+                        "timestamp": event_time,
+                        "details": json.dumps(
+                            {"detected": True, "source": "T100", "method": "polling"},
+                            ensure_ascii=False,
+                        ),
+                    }
+                    events.append(event)
+                    logger.info(
+                        f"モーション検知: {nickname} ({event_time.strftime('%H:%M:%S')})"
+                    )
 
         except Exception as e:
             logger.error(f"モーションセンサーの確認中にエラー: {e}")
