@@ -15,6 +15,7 @@ templates = Jinja2Templates(directory=str(settings.base_dir / "app" / "templates
 async def index(request: Request):
     """メインダッシュボード画面"""
     return templates.TemplateResponse(
-        "index.html",
-        {"request": request, "title": "MiMaMoRi - 見守りダッシュボード"},
+        request=request,
+        name="index.html",
+        context={"title": "MiMaMoRi - 見守りダッシュボード"},
     )
