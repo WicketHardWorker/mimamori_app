@@ -11,6 +11,7 @@ from app.database import async_session
 from app.models import ActivityEvent, Alert, AlertStatus, DailySummary, EventType
 from app.services.tapo_monitor import tapo_monitor
 from app.services.alert_service import alert_service
+from app.config import settings
 
 router = APIRouter(tags=["api"])
 JST = timezone(timedelta(hours=9))
@@ -176,6 +177,38 @@ async def get_devices():
         }
         for s in statuses
     ]
+
+
+@router.get("/health")
+async def health_check():
+    """システムヘルスチェック（ポーリングが正常に動いているか確認）"""
+    now = datetime.now(JST)
+
+    async with async_session() as session:
+        # 最後のイベント時刻を確認
+        last_event_result = await session.execute(
+            select(ActivityEvent).order_by(desc(ActivityEvent.timestamp)).limit(1)
+        )
+        last_event = last_event_result.scalar_one_or_none()
+
+    last_event_time = None
+    minutes_since_last_event = None
+    if last_event:
+        event_time = last_event.timestamp
+        if event_time.tzinfo is None:
+            event_time = event_time.replace(tzinfo=JST)
+        last_event_time = event_time.strftime("%Y-%m-%d %H:%M:%S")
+        minutes_since_last_event = (now - event_time).total_seconds() / 60
+
+    return {
+        "status": "ok",
+        "current_time": now.strftime("%Y-%m-%d %H:%M:%S"),
+        "tapo_monitor_initialized": tapo_monitor.is_initialized,
+        "last_event_time": last_event_time,
+        "minutes_since_last_event": round(minutes_since_last_event, 1) if minutes_since_last_event else None,
+        "polling_interval_seconds": settings.alert.polling_interval_seconds,
+        "warning": "ポーリング停止の可能性" if minutes_since_last_event and minutes_since_last_event > 10 else None,
+    }
 
 
 @router.get("/daily-summary")

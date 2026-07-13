@@ -275,10 +275,20 @@ class TapoMonitorService:
             return []
 
         all_events = []
-        motion_events = await self.check_motion_sensor()
-        all_events.extend(motion_events)
-        plug_events = await self.check_plug_status()
-        all_events.extend(plug_events)
+
+        # モーションセンサー（エラーでも続行）
+        try:
+            motion_events = await self.check_motion_sensor()
+            all_events.extend(motion_events)
+        except Exception as e:
+            logger.error(f"モーションセンサーチェック失敗: {e}")
+
+        # プラグ（エラーでも続行）
+        try:
+            plug_events = await self.check_plug_status()
+            all_events.extend(plug_events)
+        except Exception as e:
+            logger.error(f"プラグチェック失敗: {e}")
 
         return all_events
 

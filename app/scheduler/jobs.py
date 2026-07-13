@@ -23,15 +23,35 @@ scheduler = AsyncIOScheduler(timezone="Asia/Tokyo")
 
 
 async def poll_devices_job():
-    """デバイスポーリングジョブ"""
+    """デバイスポーリングジョブ（耐障害性強化版）"""
     try:
+        # 接続が切れていたら再初期化を試みる
+        if not tapo_monitor.is_initialized:
+            logger.warning("Tapo監視サービスが未初期化 → 再接続を試みます")
+            try:
+                await tapo_monitor.initialize()
+            except Exception as init_err:
+                logger.error(f"再接続に失敗: {init_err}")
+                return
+
         events = await tapo_monitor.poll_all_devices()
         for event_data in events:
             await alert_service.save_activity_event(event_data)
         if events:
             await alert_service.update_daily_summary()
+            logger.debug(f"ポーリング完了: {len(events)}件のイベントを記録")
+
+    except (ConnectionError, OSError, TimeoutError) as e:
+        # ネットワーク系エラー → 次回再接続できるようにリセット
+        logger.error(f"ポーリング中にネットワークエラー: {e} → 次回再接続します")
+        await tapo_monitor.close()
     except Exception as e:
         logger.error(f"デバイスポーリングジョブでエラー: {e}")
+        # 想定外エラーでもリセットして次回に備える
+        try:
+            await tapo_monitor.close()
+        except Exception:
+            pass
 
 
 async def check_inactivity_job():
@@ -96,6 +116,8 @@ def setup_scheduler():
         poll_devices_job,
         trigger=IntervalTrigger(seconds=polling_interval),
         id="poll_devices", name="デバイスポーリング", replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=30,  # 30秒以内の遅延は許容して実行
     )
     scheduler.add_job(
         check_inactivity_job,
