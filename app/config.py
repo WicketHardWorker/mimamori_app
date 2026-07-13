@@ -16,7 +16,9 @@ class TapoConfig:
     username: str = field(default_factory=lambda: os.getenv("TAPO_USERNAME", ""))
     password: str = field(default_factory=lambda: os.getenv("TAPO_PASSWORD", ""))
     h100_ip: str = field(default_factory=lambda: os.getenv("TAPO_H100_IP", ""))
-    p100m_ip: str = field(default_factory=lambda: os.getenv("TAPO_P100M_IP", ""))
+    p100m_ip: str = field(
+        default_factory=lambda: os.getenv("TAPO_P110M_IP", os.getenv("TAPO_P100M_IP", ""))
+    )
 
 
 @dataclass
