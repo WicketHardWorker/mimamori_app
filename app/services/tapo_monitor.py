@@ -71,9 +71,11 @@ class TapoMonitorService:
     async def check_motion_sensor(self) -> list[dict]:
         """H100ハブ経由でT100モーションセンサーの状態を確認
 
-        2つの方法で検知を試みる:
-        1. get_trigger_logs() でイベント履歴を取得（正確な時刻が取れる）
-        2. フォールバック: get_child_device_list() で detected フラグを確認
+        last_onboarding_timestamp の変化を検知する方式:
+        - T100の detected フラグは瞬間的にTrueになりすぐFalseに戻るため、
+          ポーリングでは取りこぼす
+        - last_onboarding_timestamp は最後のモーション検知時刻を保持しているので、
+          前回と値が変わっていれば新しい検知があったと判断する
         """
         events = []
 
@@ -81,110 +83,54 @@ class TapoMonitorService:
             logger.warning("H100ハブが未接続です")
             return events
 
-        # === 方法1: トリガーログから取得（正確な検知時刻が取れる） ===
-        try:
-            trigger_logs = await self._hub.get_trigger_logs(page_size=20)
-            logs = getattr(trigger_logs, "logs", None) or getattr(trigger_logs, "entries", None) or trigger_logs
-
-            if logs and hasattr(logs, '__iter__'):
-                for log_entry in logs:
-                    ts = getattr(log_entry, "timestamp", None) or getattr(log_entry, "time", None)
-                    if ts is None:
-                        continue
-
-                    if isinstance(ts, (int, float)):
-                        event_time = datetime.fromtimestamp(ts, tz=JST)
-                    elif isinstance(ts, datetime):
-                        event_time = ts if ts.tzinfo else ts.replace(tzinfo=JST)
-                    else:
-                        continue
-
-                    if (
-                        self._last_motion_time is not None
-                        and event_time <= self._last_motion_time
-                    ):
-                        continue
-
-                    device_id = getattr(log_entry, "device_id", "unknown")
-                    nickname = getattr(log_entry, "nickname", None) or "T100 センサー"
-
-                    event = {
-                        "event_type": EventType.MOTION_DETECTED,
-                        "device_name": nickname,
-                        "device_id": device_id,
-                        "timestamp": event_time,
-                        "details": json.dumps(
-                            {"source": "T100", "method": "trigger_logs"},
-                            ensure_ascii=False,
-                        ),
-                    }
-                    events.append(event)
-
-                if events:
-                    self._last_motion_time = max(e["timestamp"] for e in events)
-                    logger.info(
-                        f"トリガーログから {len(events)} 件のモーション検知を取得"
-                    )
-                    return events
-
-        except (AttributeError, TypeError) as e:
-            logger.debug(f"トリガーログ取得をスキップ（未対応）: {e}")
-        except Exception as e:
-            if "SESSION_TIMEOUT" in str(e) or "Unauthorized" in str(e):
-                logger.warning(f"セッション切れを検知、再接続します: {e}")
-                await self.reconnect()
-                return events
-            logger.debug(f"トリガーログ取得でエラー（フォールバックへ）: {e}")
-
-        # === 方法2: フォールバック - detected フラグによるポーリング ===
         try:
             child_device_list = await self._hub.get_child_device_list()
 
             for device in child_device_list:
-                if hasattr(device, "detected") or "T100" in str(
-                    getattr(device, "model", "")
+                model = getattr(device, "model", "")
+                if "T100" not in str(model):
+                    continue
+
+                device_id = getattr(device, "device_id", "unknown")
+                nickname = getattr(device, "nickname", "T100 センサー")
+
+                # last_onboarding_timestamp を取得（最後のモーション検知時刻）
+                ts = getattr(device, "last_onboarding_timestamp", None)
+                if ts is None or not isinstance(ts, (int, float)) or ts <= 0:
+                    logger.debug(f"{nickname}: タイムスタンプが取得できません")
+                    continue
+
+                event_time = datetime.fromtimestamp(ts, tz=JST)
+
+                # 前回と同じタイムスタンプなら新しい検知はない
+                if (
+                    self._last_motion_time is not None
+                    and event_time <= self._last_motion_time
                 ):
-                    detected = getattr(device, "detected", False)
-                    device_id = getattr(device, "device_id", "unknown")
-                    nickname = getattr(device, "nickname", "T100 センサー")
+                    continue
 
-                    if not detected:
-                        continue
+                # 新しいモーション検知！
+                self._last_motion_time = event_time
+                detected_flag = getattr(device, "detected", False)
 
-                    event_time = None
-                    for attr in ("last_onboarding_timestamp", "triggered_at", "timestamp"):
-                        ts = getattr(device, attr, None)
-                        if ts is not None:
-                            if isinstance(ts, (int, float)) and ts > 0:
-                                event_time = datetime.fromtimestamp(ts, tz=JST)
-                            elif isinstance(ts, datetime):
-                                event_time = ts if ts.tzinfo else ts.replace(tzinfo=JST)
-                            break
-
-                    if event_time is None:
-                        event_time = datetime.now(JST)
-
-                    if (
-                        self._last_motion_time is not None
-                        and event_time <= self._last_motion_time
-                    ):
-                        continue
-
-                    self._last_motion_time = event_time
-                    event = {
-                        "event_type": EventType.MOTION_DETECTED,
-                        "device_name": nickname,
-                        "device_id": device_id,
-                        "timestamp": event_time,
-                        "details": json.dumps(
-                            {"detected": True, "source": "T100", "method": "polling"},
-                            ensure_ascii=False,
-                        ),
-                    }
-                    events.append(event)
-                    logger.info(
-                        f"モーション検知: {nickname} ({event_time.strftime('%H:%M:%S')})"
-                    )
+                event = {
+                    "event_type": EventType.MOTION_DETECTED,
+                    "device_name": nickname,
+                    "device_id": device_id,
+                    "timestamp": event_time,
+                    "details": json.dumps(
+                        {
+                            "source": "T100",
+                            "method": "timestamp_change",
+                            "detected_flag": detected_flag,
+                        },
+                        ensure_ascii=False,
+                    ),
+                }
+                events.append(event)
+                logger.info(
+                    f"モーション検知: {nickname} ({event_time.strftime('%H:%M:%S')})"
+                )
 
         except Exception as e:
             if "SESSION_TIMEOUT" in str(e) or "Unauthorized" in str(e):
