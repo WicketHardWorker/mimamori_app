@@ -71,11 +71,11 @@ class TapoMonitorService:
     async def check_motion_sensor(self) -> list[dict]:
         """H100ハブ経由でT100モーションセンサーの状態を確認
 
-        last_onboarding_timestamp の変化を検知する方式:
-        - T100の detected フラグは瞬間的にTrueになりすぐFalseに戻るため、
-          ポーリングでは取りこぼす
-        - last_onboarding_timestamp は最後のモーション検知時刻を保持しているので、
-          前回と値が変わっていれば新しい検知があったと判断する
+        detected フラグ方式（クールダウン付き）:
+        - detected=True を検出したら現在時刻でイベントを記録
+        - 同一検知の重複記録を防ぐため、最低60秒のクールダウンを設ける
+        - T100の report_interval（デフォルト16秒）ごとにフラグが更新されるので、
+          1分間隔のポーリングで大部分をキャッチできる
         """
         events = []
 
@@ -93,43 +93,38 @@ class TapoMonitorService:
 
                 device_id = getattr(device, "device_id", "unknown")
                 nickname = getattr(device, "nickname", "T100 センサー")
+                detected = getattr(device, "detected", False)
 
-                # last_onboarding_timestamp を取得（最後のモーション検知時刻）
-                ts = getattr(device, "last_onboarding_timestamp", None)
-                if ts is None or not isinstance(ts, (int, float)) or ts <= 0:
-                    logger.debug(f"{nickname}: タイムスタンプが取得できません")
+                if not detected:
                     continue
 
-                event_time = datetime.fromtimestamp(ts, tz=JST)
+                now = datetime.now(JST)
 
-                # 前回と同じタイムスタンプなら新しい検知はない
-                if (
-                    self._last_motion_time is not None
-                    and event_time <= self._last_motion_time
-                ):
-                    continue
+                # クールダウン: 前回記録から60秒以内なら重複とみなしスキップ
+                if self._last_motion_time is not None:
+                    elapsed = (now - self._last_motion_time).total_seconds()
+                    if elapsed < 60:
+                        continue
 
                 # 新しいモーション検知！
-                self._last_motion_time = event_time
-                detected_flag = getattr(device, "detected", False)
+                self._last_motion_time = now
 
                 event = {
                     "event_type": EventType.MOTION_DETECTED,
                     "device_name": nickname,
                     "device_id": device_id,
-                    "timestamp": event_time,
+                    "timestamp": now,
                     "details": json.dumps(
                         {
                             "source": "T100",
-                            "method": "timestamp_change",
-                            "detected_flag": detected_flag,
+                            "method": "detected_flag",
                         },
                         ensure_ascii=False,
                     ),
                 }
                 events.append(event)
                 logger.info(
-                    f"モーション検知: {nickname} ({event_time.strftime('%H:%M:%S')})"
+                    f"モーション検知: {nickname} ({now.strftime('%H:%M:%S')})"
                 )
 
         except Exception as e:
